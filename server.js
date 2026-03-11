@@ -12,7 +12,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173' || 'https://vnbmlkd2-5173.inc1.devtunnels.ms/',
+  origin: '*',
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
