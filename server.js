@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const masterRoutes = require('./routes/master');
 const customerRoutes = require('./routes/customers');
 const employeeRoutes = require('./routes/employees');
+const followupRoutes = require('./routes/followup');
 
 const app = express();
 
@@ -26,6 +27,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/master', masterRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/employees', employeeRoutes);
+app.use('/api/followups', followupRoutes);
+
 
 // Health check
 app.get('/api/health', (req, res) => {

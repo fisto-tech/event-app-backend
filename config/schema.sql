@@ -103,3 +103,53 @@ INSERT INTO expo_master (expo_name, status) VALUES
 ('Tech Expo 2025', 'active'),
 ('Business Summit 2025', 'active')
 ON DUPLICATE KEY UPDATE id=id;
+
+
+ALTER TABLE customers
+  ADD COLUMN sms_sent       TINYINT(1) NOT NULL DEFAULT 0  COMMENT '1 = SMS send was requested',
+  ADD COLUMN sms_delivered  TINYINT(1) NOT NULL DEFAULT 0  COMMENT '1 = SMS delivered confirmed',
+  ADD COLUMN wa_sent        TINYINT(1) NOT NULL DEFAULT 0  COMMENT '1 = WhatsApp send was requested',
+  ADD COLUMN wa_delivered   TINYINT(1) NOT NULL DEFAULT 0  COMMENT '1 = WhatsApp delivered confirmed';
+
+
+CREATE TABLE IF NOT EXISTS followup_logs (
+  id                INT(11)       NOT NULL AUTO_INCREMENT,
+  customer_id       INT(11)       NOT NULL,
+  -- Contact person captured at time of followup
+  contact_name      VARCHAR(255)  NOT NULL,
+  contact_designation VARCHAR(255) DEFAULT NULL,
+  contact_phone     VARCHAR(20)   NOT NULL,
+  contact_email     VARCHAR(255)  DEFAULT NULL,
+  -- Stage at the time of this followup entry
+  followup_stage    ENUM('first_followup','proposal','lead','confirm') NOT NULL DEFAULT 'first_followup',
+  remarks           TEXT          DEFAULT NULL,
+  -- When the NEXT follow-up should happen (set by employee)
+  next_followup_date DATE         DEFAULT NULL,
+  -- Share flags (only relevant for proposal stage; locked once saved=1)
+  share_whatsapp    TINYINT(1)    NOT NULL DEFAULT 0,
+  share_email       TINYINT(1)    NOT NULL DEFAULT 0,
+  shares_locked     TINYINT(1)    NOT NULL DEFAULT 0,  -- set to 1 on first save with share flags
+  -- Meta
+  employee_id       INT(11)       NOT NULL,
+  created_at        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_customer_id      (customer_id),
+  KEY idx_next_followup    (next_followup_date),
+  KEY idx_followup_stage   (followup_stage),
+  KEY idx_employee_id      (employee_id),
+  CONSTRAINT fk_fl_customer  FOREIGN KEY (customer_id)  REFERENCES customers (id) ON DELETE CASCADE,
+  CONSTRAINT fk_fl_employee  FOREIGN KEY (employee_id)  REFERENCES employees (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 2. Add current_stage to customers so the main listing always shows
+--    the latest stage without a JOIN on followup_logs.
+ALTER TABLE customers
+  ADD COLUMN current_stage
+    ENUM('first_followup','proposal','lead','confirm')
+    NOT NULL DEFAULT 'first_followup'
+    AFTER followup_date;
+
+-- ─── Indexes that help the main queries ──────────────────────────────────────
+-- Fetch customers due on a date for a given stage
+CREATE INDEX idx_customers_stage_followup
+  ON customers (current_stage, followup_date);
