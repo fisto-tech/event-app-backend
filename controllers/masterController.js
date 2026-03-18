@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-// ─── SOURCES (from "Others" dropdown entries) ─────────────────────────────────
+// ─── SOURCES ──────────────────────────────────────────────────────────────────
 
 const getSources = async (req, res) => {
   try {
@@ -12,22 +12,15 @@ const getSources = async (req, res) => {
   }
 };
 
-// When user enters a new source name in the "Others" field during registration
 const addSource = async (req, res) => {
   try {
     const { source_name } = req.body;
-    if (!source_name || !source_name.trim()) {
+    if (!source_name || !source_name.trim())
       return res.status(400).json({ success: false, message: 'Source name is required' });
-    }
-
     const trimmedName = source_name.trim();
-    // Check if source already exists
     const [existing] = await pool.query('SELECT id FROM sources WHERE source_name = ?', [trimmedName]);
-    
-    if (existing.length > 0) {
+    if (existing.length > 0)
       return res.json({ success: true, data: { id: existing[0].id, source_name: trimmedName }, message: 'Source already exists' });
-    }
-
     const [result] = await pool.query('INSERT INTO sources (source_name) VALUES (?)', [trimmedName]);
     res.status(201).json({ success: true, data: { id: result.insertId, source_name: trimmedName } });
   } catch (error) {
@@ -36,12 +29,11 @@ const addSource = async (req, res) => {
   }
 };
 
-// ─── EXPO NAMES ────────────────────────────────────────────────────────────────
+// ─── EXPO NAMES ───────────────────────────────────────────────────────────────
 
 const getExpos = async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM expo_master WHERE status = "active" ORDER BY expo_name');
-    // Parse conduct_dates JSON for each row
     const data = rows.map(r => ({
       ...r,
       conduct_dates: r.conduct_dates
@@ -92,23 +84,18 @@ const deleteExpo = async (req, res) => {
   }
 };
 
-// GET /master/current-expo — returns the currently selected global expo (or null)
 const getCurrentExpo = async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT id, expo_name FROM expo_master WHERE is_current = 1 AND status = "active" LIMIT 1'
-    );
+    const [rows] = await pool.query('SELECT id, expo_name FROM expo_master WHERE is_current = 1 AND status = "active" LIMIT 1');
     res.json({ success: true, data: rows[0] || null });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// PUT /master/current-expo — admin sets a new global current expo by id (or clears with id=null)
 const setCurrentExpo = async (req, res) => {
   try {
-    const { id } = req.body; // id = expo id to set as current, or null to clear
-    // Clear all first
+    const { id } = req.body;
     await pool.query('UPDATE expo_master SET is_current = 0');
     if (id) {
       await pool.query('UPDATE expo_master SET is_current = 1 WHERE id = ?', [id]);
@@ -121,11 +108,19 @@ const setCurrentExpo = async (req, res) => {
   }
 };
 
-// ─── ENQUIRY TYPES ────────────────────────────────────────────────────────────
+// ─── ENQUIRY TYPES — enquiry_types_custom table ONLY ─────────────────────────
+// All enquiry type entries live in enquiry_types_custom.
+// expo_id = NULL means "General" (available to all expos).
+// expo_id = <id> means specific to that expo.
 
 const getEnquiryTypes = async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM enquiry_types ORDER BY name');
+    const [rows] = await pool.query(
+      `SELECT etc.id, etc.name, etc.expo_id, em.expo_name
+       FROM enquiry_types_custom etc
+       LEFT JOIN expo_master em ON em.id = etc.expo_id
+       ORDER BY etc.name`
+    );
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -134,10 +129,13 @@ const getEnquiryTypes = async (req, res) => {
 
 const createEnquiryType = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, expo_id } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
-    const [result] = await pool.query('INSERT INTO enquiry_types (name) VALUES (?)', [name]);
-    res.status(201).json({ success: true, data: { id: result.insertId, name } });
+    const [result] = await pool.query(
+      'INSERT INTO enquiry_types_custom (name, expo_id) VALUES (?, ?)',
+      [name, expo_id || null]
+    );
+    res.status(201).json({ success: true, data: { id: result.insertId, name, expo_id: expo_id || null } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
@@ -146,18 +144,38 @@ const createEnquiryType = async (req, res) => {
 const deleteEnquiryType = async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM enquiry_types WHERE id = ?', [id]);
+    await pool.query('DELETE FROM enquiry_types_custom WHERE id = ?', [id]);
     res.json({ success: true, message: 'Deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// ─── INDUSTRY TYPES (Base & Customizable) ──────────────────────────────────────
+const updateEnquiryType = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, expo_id } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
+    await pool.query('UPDATE enquiry_types_custom SET name = ?, expo_id = ? WHERE id = ?', [name, expo_id || null, id]);
+    res.json({ success: true, message: 'Updated successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ─── INDUSTRY TYPES — industry_types_custom table ONLY ───────────────────────
+// All industry type entries live in industry_types_custom.
+// expo_id = NULL means "General" (available to all expos).
+// expo_id = <id> means specific to that expo.
 
 const getIndustryTypes = async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM industry_types ORDER BY name');
+    const [rows] = await pool.query(
+      `SELECT itc.id, itc.name, itc.expo_id, em.expo_name
+       FROM industry_types_custom itc
+       LEFT JOIN expo_master em ON em.id = itc.expo_id
+       ORDER BY itc.name`
+    );
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -166,10 +184,13 @@ const getIndustryTypes = async (req, res) => {
 
 const createIndustryType = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, expo_id } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
-    const [result] = await pool.query('INSERT INTO industry_types (name) VALUES (?)', [name]);
-    res.status(201).json({ success: true, data: { id: result.insertId, name } });
+    const [result] = await pool.query(
+      'INSERT INTO industry_types_custom (name, expo_id) VALUES (?, ?)',
+      [name, expo_id || null]
+    );
+    res.status(201).json({ success: true, data: { id: result.insertId, name, expo_id: expo_id || null } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
@@ -178,70 +199,21 @@ const createIndustryType = async (req, res) => {
 const deleteIndustryType = async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM industry_types WHERE id = ?', [id]);
+    await pool.query('DELETE FROM industry_types_custom WHERE id = ?', [id]);
     res.json({ success: true, message: 'Deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// Get customizable industry types for a specific expo/enquiry_type combo
-// If expo_id and enquiry_type provided: return customized list + general
-// If only expo_id provided: return expo-specific + general
-// If nothing provided: return general only
-const getIndustryTypesForContext = async (req, res) => {
+const updateIndustryType = async (req, res) => {
   try {
-    const { expo_id, enquiry_type_id } = req.query;
-
-    // Always return all general industry types
-    const [generalRows] = await pool.query(
-      'SELECT id, name FROM industry_types ORDER BY name'
-    );
-
-    // Always return custom entries; filter by expo/enquiry if provided
-    let customQuery = 'SELECT id, name, expo_id, enquiry_type_id FROM industry_types_custom';
-    const cParams = [], conditions = [];
-    if (expo_id)         { conditions.push('expo_id = ?');          cParams.push(expo_id); }
-    if (enquiry_type_id) { conditions.push('enquiry_type_id = ?');  cParams.push(enquiry_type_id); }
-    if (conditions.length) customQuery += ` WHERE ${conditions.join(' AND ')}`;
-    customQuery += ' ORDER BY name';
-
-    const [customRows] = await pool.query(customQuery, cParams);
-
-    res.json({ success: true, data: { general: generalRows, custom: customRows } });
-  } catch (error) {
-    console.error('Get industry types for context error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-};
-
-// Create or copy industry type to custom level
-const createCustomIndustryType = async (req, res) => {
-  try {
-    const { industry_type_id, expo_id, enquiry_type_id, name } = req.body;
+    const { id } = req.params;
+    const { name, expo_id } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
-
-    let finalIndustryTypeId = industry_type_id;
-    
-    // If copying from general, create a new base entry first
-    if (!industry_type_id) {
-      const [result] = await pool.query('INSERT INTO industry_types (name) VALUES (?)', [name]);
-      finalIndustryTypeId = result.insertId;
-    }
-
-    const [customResult] = await pool.query(
-      `INSERT INTO industry_types_custom 
-       (industry_type_id, expo_id, enquiry_type_id, name, is_general) 
-       VALUES (?, ?, ?, ?, 0)`,
-      [finalIndustryTypeId, expo_id || null, enquiry_type_id || null, name]
-    );
-
-    res.status(201).json({ 
-      success: true, 
-      data: { id: customResult.insertId, name, expo_id, enquiry_type_id } 
-    });
+    await pool.query('UPDATE industry_types_custom SET name = ?, expo_id = ? WHERE id = ?', [name, expo_id || null, id]);
+    res.json({ success: true, message: 'Updated successfully' });
   } catch (error) {
-    console.error('Create custom industry type error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -278,58 +250,105 @@ const deleteSmsTemplate = async (req, res) => {
   }
 };
 
-// Response: { general: [...], custom: [...] }
+const updateSmsTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content } = req.body;
+    if (!title || !content) return res.status(400).json({ success: false, message: 'Title and content are required' });
+    await pool.query('UPDATE sms_templates SET title = ?, content = ? WHERE id = ?', [title, content, id]);
+    res.json({ success: true, message: 'Updated successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// GET /master/sms-templates/context
+// enquiryTypes: general (expo_id IS NULL) always + expo-specific if expo_id provided (from enquiry_types_custom)
+// industryTypes: general (expo_id IS NULL) always + expo-specific if expo_id provided (from industry_types_custom)
 const getSmsTemplatesForContext = async (req, res) => {
   try {
-    const { expo_id, enquiry_type_id } = req.query;
+    const { expo_id, enquiry_type_id, industry_type_id } = req.query;
 
-    const [generalRows] = await pool.query(
-      'SELECT id, title, content FROM sms_templates ORDER BY title'
-    );
+    const [generalRows] = await pool.query('SELECT id, title, content FROM sms_templates ORDER BY title');
 
-    let customQuery = 'SELECT id, title, content, expo_id, enquiry_type_id FROM sms_templates_custom';
+    let customQuery = 'SELECT id, title, content, expo_id, enquiry_type_id, industry_type_id FROM sms_templates_custom';
     const cParams = [], conditions = [];
-    if (expo_id)         { conditions.push('expo_id = ?');          cParams.push(expo_id); }
-    if (enquiry_type_id) { conditions.push('enquiry_type_id = ?');  cParams.push(enquiry_type_id); }
+    if (expo_id)          { conditions.push('expo_id = ?');           cParams.push(expo_id); }
+    if (enquiry_type_id)  { conditions.push('enquiry_type_id = ?');   cParams.push(enquiry_type_id); }
+    if (industry_type_id) { conditions.push('industry_type_id = ?');  cParams.push(industry_type_id); }
     if (conditions.length) customQuery += ` WHERE ${conditions.join(' AND ')}`;
     customQuery += ' ORDER BY title';
-
     const [customRows] = await pool.query(customQuery, cParams);
 
-    res.json({ success: true, data: { general: generalRows, custom: customRows } });
+    // Enquiry types: general (NULL) always; add expo-specific when expo chosen
+    let enquiryQuery = 'SELECT id, name, expo_id FROM enquiry_types_custom WHERE expo_id IS NULL';
+    const eqParams = [];
+    if (expo_id) {
+      enquiryQuery = `SELECT id, name, expo_id FROM enquiry_types_custom WHERE expo_id IS NULL
+                      UNION
+                      SELECT id, name, expo_id FROM enquiry_types_custom WHERE expo_id = ?`;
+      eqParams.push(expo_id);
+    }
+    enquiryQuery += ' ORDER BY name';
+    const [enquiryTypeRows] = await pool.query(enquiryQuery, eqParams);
+
+    // Industry types: general (NULL) always; add expo-specific when expo chosen
+    let industryQuery = 'SELECT id, name, expo_id FROM industry_types_custom WHERE expo_id IS NULL';
+    const indParams = [];
+    if (expo_id) {
+      industryQuery = `SELECT id, name, expo_id FROM industry_types_custom WHERE expo_id IS NULL
+                       UNION
+                       SELECT id, name, expo_id FROM industry_types_custom WHERE expo_id = ?`;
+      indParams.push(expo_id);
+    }
+    industryQuery += ' ORDER BY name';
+    const [industryTypeRows] = await pool.query(industryQuery, indParams);
+
+    res.json({
+      success: true,
+      data: {
+        general: generalRows,
+        custom: customRows,
+        enquiryTypes: enquiryTypeRows,
+        industryTypes: industryTypeRows,
+      }
+    });
   } catch (error) {
     console.error('Get SMS templates for context error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// Create custom SMS template
 const createCustomSmsTemplate = async (req, res) => {
   try {
-    const { template_id, expo_id, enquiry_type_id, title, content } = req.body;
+    const { template_id, expo_id, enquiry_type_id, industry_type_id, title, content } = req.body;
     if (!title || !content) return res.status(400).json({ success: false, message: 'Title and content are required' });
-
     let finalTemplateId = template_id;
-    
-    // If not copying from existing, create base template first
     if (!template_id) {
       const [result] = await pool.query('INSERT INTO sms_templates (title, content) VALUES (?, ?)', [title, content]);
       finalTemplateId = result.insertId;
     }
-
     const [customResult] = await pool.query(
-      `INSERT INTO sms_templates_custom 
-       (template_id, expo_id, enquiry_type_id, title, content, is_general) 
-       VALUES (?, ?, ?, ?, ?, 0)`,
-      [finalTemplateId, expo_id || null, enquiry_type_id || null, title, content]
+      `INSERT INTO sms_templates_custom (template_id, expo_id, enquiry_type_id, industry_type_id, title, content, is_general)
+       VALUES (?, ?, ?, ?, ?, ?, 0)`,
+      [finalTemplateId, expo_id || null, enquiry_type_id || null, industry_type_id || null, title, content]
     );
-
-    res.status(201).json({ 
-      success: true, 
-      data: { id: customResult.insertId, title, content, expo_id, enquiry_type_id } 
+    res.status(201).json({
+      success: true,
+      data: { id: customResult.insertId, title, content, expo_id, enquiry_type_id, industry_type_id }
     });
   } catch (error) {
     console.error('Create custom SMS template error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+const deleteCustomSmsTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM sms_templates_custom WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Deleted successfully' });
+  } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -366,57 +385,102 @@ const deleteWhatsappTemplate = async (req, res) => {
   }
 };
 
-// Response: { general: [...], custom: [...] }
+const updateWhatsappTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content } = req.body;
+    if (!title || !content) return res.status(400).json({ success: false, message: 'Title and content are required' });
+    await pool.query('UPDATE whatsapp_templates SET title = ?, content = ? WHERE id = ?', [title, content, id]);
+    res.json({ success: true, message: 'Updated successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
 const getWhatsappTemplatesForContext = async (req, res) => {
   try {
-    const { expo_id, enquiry_type_id } = req.query;
+    const { expo_id, enquiry_type_id, industry_type_id } = req.query;
 
-    const [generalRows] = await pool.query(
-      'SELECT id, title, content FROM whatsapp_templates ORDER BY title'
-    );
+    const [generalRows] = await pool.query('SELECT id, title, content FROM whatsapp_templates ORDER BY title');
 
-    let customQuery = 'SELECT id, title, content, expo_id, enquiry_type_id FROM whatsapp_templates_custom';
+    let customQuery = 'SELECT id, title, content, expo_id, enquiry_type_id, industry_type_id FROM whatsapp_templates_custom';
     const cParams = [], conditions = [];
-    if (expo_id)         { conditions.push('expo_id = ?');          cParams.push(expo_id); }
-    if (enquiry_type_id) { conditions.push('enquiry_type_id = ?');  cParams.push(enquiry_type_id); }
+    if (expo_id)          { conditions.push('expo_id = ?');           cParams.push(expo_id); }
+    if (enquiry_type_id)  { conditions.push('enquiry_type_id = ?');   cParams.push(enquiry_type_id); }
+    if (industry_type_id) { conditions.push('industry_type_id = ?');  cParams.push(industry_type_id); }
     if (conditions.length) customQuery += ` WHERE ${conditions.join(' AND ')}`;
     customQuery += ' ORDER BY title';
-
     const [customRows] = await pool.query(customQuery, cParams);
 
-    res.json({ success: true, data: { general: generalRows, custom: customRows } });
+    // Enquiry types: general (NULL) always; add expo-specific when expo chosen
+    let enquiryQuery = 'SELECT id, name, expo_id FROM enquiry_types_custom WHERE expo_id IS NULL';
+    const eqParams = [];
+    if (expo_id) {
+      enquiryQuery = `SELECT id, name, expo_id FROM enquiry_types_custom WHERE expo_id IS NULL
+                      UNION
+                      SELECT id, name, expo_id FROM enquiry_types_custom WHERE expo_id = ?`;
+      eqParams.push(expo_id);
+    }
+    enquiryQuery += ' ORDER BY name';
+    const [enquiryTypeRows] = await pool.query(enquiryQuery, eqParams);
+
+    // Industry types: general (NULL) always; add expo-specific when expo chosen
+    let industryQuery = 'SELECT id, name, expo_id FROM industry_types_custom WHERE expo_id IS NULL';
+    const indParams = [];
+    if (expo_id) {
+      industryQuery = `SELECT id, name, expo_id FROM industry_types_custom WHERE expo_id IS NULL
+                       UNION
+                       SELECT id, name, expo_id FROM industry_types_custom WHERE expo_id = ?`;
+      indParams.push(expo_id);
+    }
+    industryQuery += ' ORDER BY name';
+    const [industryTypeRows] = await pool.query(industryQuery, indParams);
+
+    res.json({
+      success: true,
+      data: {
+        general: generalRows,
+        custom: customRows,
+        enquiryTypes: enquiryTypeRows,
+        industryTypes: industryTypeRows,
+      }
+    });
   } catch (error) {
     console.error('Get WhatsApp templates for context error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// Create custom WhatsApp template
 const createCustomWhatsappTemplate = async (req, res) => {
   try {
-    const { template_id, expo_id, enquiry_type_id, title, content } = req.body;
+    const { template_id, expo_id, enquiry_type_id, industry_type_id, title, content } = req.body;
     if (!title || !content) return res.status(400).json({ success: false, message: 'Title and content are required' });
-
     let finalTemplateId = template_id;
-    
     if (!template_id) {
       const [result] = await pool.query('INSERT INTO whatsapp_templates (title, content) VALUES (?, ?)', [title, content]);
       finalTemplateId = result.insertId;
     }
-
     const [customResult] = await pool.query(
-      `INSERT INTO whatsapp_templates_custom 
-       (template_id, expo_id, enquiry_type_id, title, content, is_general) 
-       VALUES (?, ?, ?, ?, ?, 0)`,
-      [finalTemplateId, expo_id || null, enquiry_type_id || null, title, content]
+      `INSERT INTO whatsapp_templates_custom (template_id, expo_id, enquiry_type_id, industry_type_id, title, content, is_general)
+       VALUES (?, ?, ?, ?, ?, ?, 0)`,
+      [finalTemplateId, expo_id || null, enquiry_type_id || null, industry_type_id || null, title, content]
     );
-
-    res.status(201).json({ 
-      success: true, 
-      data: { id: customResult.insertId, title, content, expo_id, enquiry_type_id } 
+    res.status(201).json({
+      success: true,
+      data: { id: customResult.insertId, title, content, expo_id, enquiry_type_id, industry_type_id }
     });
   } catch (error) {
     console.error('Create custom WhatsApp template error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+const deleteCustomWhatsappTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM whatsapp_templates_custom WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Deleted successfully' });
+  } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -453,33 +517,17 @@ const deleteEmailTemplate = async (req, res) => {
   }
 };
 
-// Get email templates for context
 const getEmailTemplatesForContext = async (req, res) => {
   try {
     const { expo_id, enquiry_type_id } = req.query;
-    let query = `
-      SELECT et.id, et.title, et.subject, et.content, 'general' as type, NULL as expo_id, NULL as enquiry_type_id
-      FROM email_templates et
-    `;
+    let query = `SELECT et.id, et.title, et.subject, et.content, 'general' as type, NULL as expo_id, NULL as enquiry_type_id FROM email_templates et`;
     let params = [];
-
     if (expo_id || enquiry_type_id) {
-      query += ` UNION
-        SELECT etc.id, etc.title, etc.subject, etc.content, 'custom' as type, etc.expo_id, etc.enquiry_type_id
-        FROM email_templates_custom etc
-        WHERE 1=1
-      `;
-      if (expo_id) {
-        query += ` AND etc.expo_id = ?`;
-        params.push(expo_id);
-      }
-      if (enquiry_type_id) {
-        query += ` AND etc.enquiry_type_id = ?`;
-        params.push(enquiry_type_id);
-      }
+      query += ` UNION SELECT etc.id, etc.title, etc.subject, etc.content, 'custom' as type, etc.expo_id, etc.enquiry_type_id FROM email_templates_custom etc WHERE 1=1`;
+      if (expo_id)         { query += ` AND etc.expo_id = ?`;         params.push(expo_id); }
+      if (enquiry_type_id) { query += ` AND etc.enquiry_type_id = ?`; params.push(enquiry_type_id); }
     }
     query += ` ORDER BY title`;
-
     const [rows] = await pool.query(query, params);
     res.json({ success: true, data: rows });
   } catch (error) {
@@ -488,81 +536,37 @@ const getEmailTemplatesForContext = async (req, res) => {
   }
 };
 
-// Create custom email template
 const createCustomEmailTemplate = async (req, res) => {
   try {
     const { template_id, expo_id, enquiry_type_id, title, subject, content } = req.body;
     if (!title || !subject || !content) return res.status(400).json({ success: false, message: 'All fields are required' });
-
     let finalTemplateId = template_id;
-    
     if (!template_id) {
       const [result] = await pool.query('INSERT INTO email_templates (title, subject, content) VALUES (?, ?, ?)', [title, subject, content]);
       finalTemplateId = result.insertId;
     }
-
     const [customResult] = await pool.query(
-      `INSERT INTO email_templates_custom 
-       (template_id, expo_id, enquiry_type_id, title, subject, content, is_general) 
-       VALUES (?, ?, ?, ?, ?, ?, 0)`,
+      `INSERT INTO email_templates_custom (template_id, expo_id, enquiry_type_id, title, subject, content, is_general) VALUES (?, ?, ?, ?, ?, ?, 0)`,
       [finalTemplateId, expo_id || null, enquiry_type_id || null, title, subject, content]
     );
-
-    res.status(201).json({ 
-      success: true, 
-      data: { id: customResult.insertId, title, subject, content, expo_id, enquiry_type_id } 
-    });
+    res.status(201).json({ success: true, data: { id: customResult.insertId, title, subject, content, expo_id, enquiry_type_id } });
   } catch (error) {
     console.error('Create custom email template error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// ─── DELETE CUSTOM ENTRIES ────────────────────────────────────────────────────
-
-const deleteCustomIndustryType = async (req, res) => {
-  try {
-    const { id } = req.params;
-    await pool.query('DELETE FROM industry_types_custom WHERE id = ?', [id]);
-    res.json({ success: true, message: 'Deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-};
-
-const deleteCustomSmsTemplate = async (req, res) => {
-  try {
-    const { id } = req.params;
-    await pool.query('DELETE FROM sms_templates_custom WHERE id = ?', [id]);
-    res.json({ success: true, message: 'Deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-};
-
-const deleteCustomWhatsappTemplate = async (req, res) => {
-  try {
-    const { id } = req.params;
-    await pool.query('DELETE FROM whatsapp_templates_custom WHERE id = ?', [id]);
-    res.json({ success: true, message: 'Deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-};
-
 module.exports = {
-  // Sources
   getSources, addSource,
-  // Expos
   getExpos, createExpo, updateExpo, deleteExpo, getCurrentExpo, setCurrentExpo,
-  // Enquiry Types
-  getEnquiryTypes, createEnquiryType, deleteEnquiryType,
-  // Industry Types
-  getIndustryTypes, createIndustryType, deleteIndustryType, getIndustryTypesForContext, createCustomIndustryType, deleteCustomIndustryType,
+  // Enquiry Types — enquiry_types_custom only
+  getEnquiryTypes, createEnquiryType, updateEnquiryType, deleteEnquiryType,
+  // Industry Types — industry_types_custom only
+  getIndustryTypes, createIndustryType, updateIndustryType, deleteIndustryType,
   // SMS Templates
-  getSmsTemplates, createSmsTemplate, deleteSmsTemplate, getSmsTemplatesForContext, createCustomSmsTemplate, deleteCustomSmsTemplate,
+  getSmsTemplates, createSmsTemplate, updateSmsTemplate, deleteSmsTemplate, getSmsTemplatesForContext, createCustomSmsTemplate, deleteCustomSmsTemplate,
   // WhatsApp Templates
-  getWhatsappTemplates, createWhatsappTemplate, deleteWhatsappTemplate, getWhatsappTemplatesForContext, createCustomWhatsappTemplate, deleteCustomWhatsappTemplate,
+  getWhatsappTemplates, createWhatsappTemplate, updateWhatsappTemplate, deleteWhatsappTemplate, getWhatsappTemplatesForContext, createCustomWhatsappTemplate, deleteCustomWhatsappTemplate,
   // Email Templates
   getEmailTemplates, createEmailTemplate, deleteEmailTemplate, getEmailTemplatesForContext, createCustomEmailTemplate,
 };
