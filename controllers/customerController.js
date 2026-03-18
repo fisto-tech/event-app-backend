@@ -1,13 +1,13 @@
 const pool = require('../config/db');
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 // Convert JS boolean / string "true"/"false" to MySQL 0/1
 const toBit = (val) => (val === true || val === 'true' || val === 1 || val === '1' ? 1 : 0);
 
 // ─── GET all customers ────────────────────────────────────────────────────────
 const getCustomers = async (req, res) => {
   try {
-    const { search, expo_id, industry_type, enquiry_type } = req.query;
+    const { search, search_field, expo_id, industry_type, enquiry_type } = req.query;
     let query = `
       SELECT c.*, e.name AS employee_name, em.expo_name AS expo_name_master
       FROM customers c
@@ -18,8 +18,28 @@ const getCustomers = async (req, res) => {
     const params = [];
 
     if (search) {
-      query += ` AND (c.customer_name LIKE ? OR c.company_name LIKE ? OR c.phone_number LIKE ? OR c.email LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      // Map frontend field keys to DB column names
+      const FIELD_MAP = {
+        customer_name: 'c.customer_name',
+        company_name:  'c.company_name',
+        designation:   'c.designation',
+        phone_number:  'c.phone_number',
+        email:         'c.email',
+        city:          'c.city',
+        location:      'c.location',
+        website:       'c.website',
+      };
+      const col = search_field && FIELD_MAP[search_field] ? FIELD_MAP[search_field] : null;
+
+      if (col) {
+        // Search in specific field only
+        query += ` AND ${col} LIKE ?`;
+        params.push(`%${search}%`);
+      } else {
+        // All fields (default)
+        query += ` AND (c.customer_name LIKE ? OR c.company_name LIKE ? OR c.designation LIKE ? OR c.phone_number LIKE ? OR c.email LIKE ? OR c.city LIKE ? OR c.location LIKE ? OR c.website LIKE ?)`;
+        params.push(...Array(8).fill(`%${search}%`));
+      }
     }
     if (expo_id)       { query += ` AND c.expo_id = ?`;        params.push(expo_id); }
     if (industry_type) { query += ` AND c.industry_type = ?`;  params.push(industry_type); }
@@ -28,7 +48,14 @@ const getCustomers = async (req, res) => {
     query += ` ORDER BY c.id DESC`;
 
     const [rows] = await pool.query(query, params);
-    res.json({ success: true, data: rows });
+    // Parse JSON additional_contacts for each row
+    const data = rows.map((r) => ({
+      ...r,
+      additional_contacts: r.additional_contacts
+        ? (typeof r.additional_contacts === 'string' ? JSON.parse(r.additional_contacts) : r.additional_contacts)
+        : [],
+    }));
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Get customers error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -40,16 +67,13 @@ const createCustomer = async (req, res) => {
   try {
     const {
       expo_id, expo_name, company_name, customer_name, designation,
-      phone_number, enquiry_type, email, location, city,
-      industry_type, followup_date, remarks,
-      sms_sent, sms_delivered, wa_sent, wa_delivered,
+      phone_number, mobile_no_2, enquiry_type, email, email_2, website,
+      location, city, industry_type, followup_date, remarks,
+      sms_sent, wa_sent, additional_contacts,
     } = req.body;
 
     if (!company_name || !customer_name || !phone_number) {
-      return res.status(400).json({
-        success: false,
-        message: 'Company name, customer name, and phone are required',
-      });
+      return res.status(400).json({ success: false, message: 'Company name, customer name, and phone are required' });
     }
 
     const employee_id = req.user.id;
@@ -57,15 +81,17 @@ const createCustomer = async (req, res) => {
     const [result] = await pool.query(
       `INSERT INTO customers
          (expo_id, expo_name, company_name, customer_name, designation,
-          phone_number, enquiry_type, email, location, city,
-          industry_type, followup_date, remarks, employee_id,
-          sms_sent, sms_delivered, wa_sent, wa_delivered)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          phone_number, mobile_no_2, enquiry_type, email, email_2, website,
+          location, city, industry_type, followup_date, remarks, employee_id,
+          sms_sent, wa_sent, additional_contacts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        expo_id || null, expo_name, company_name, customer_name, designation,
-        phone_number, enquiry_type, email, location, city,
-        industry_type, followup_date || null, remarks, employee_id,
-        toBit(sms_sent), toBit(sms_delivered), toBit(wa_sent), toBit(wa_delivered),
+        expo_id || null, expo_name || null, company_name, customer_name, designation || null,
+        phone_number, mobile_no_2 || null, enquiry_type || null, email || null, email_2 || null,
+        website || null, location || null, city || null, industry_type || null,
+        followup_date || null, remarks || null, employee_id,
+        toBit(sms_sent), toBit(wa_sent),
+        additional_contacts ? JSON.stringify(additional_contacts) : null,
       ]
     );
 
@@ -76,7 +102,7 @@ const createCustomer = async (req, res) => {
     });
   } catch (error) {
     console.error('Create customer error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: error.message || 'Server error' });
   }
 };
 
@@ -86,23 +112,25 @@ const updateCustomer = async (req, res) => {
     const { id } = req.params;
     const {
       expo_id, expo_name, company_name, customer_name, designation,
-      phone_number, enquiry_type, email, location, city,
-      industry_type, followup_date, remarks,
-      sms_sent, sms_delivered, wa_sent, wa_delivered,
+      phone_number, mobile_no_2, enquiry_type, email, email_2, website,
+      location, city, industry_type, followup_date, remarks,
+      sms_sent, wa_sent, additional_contacts,
     } = req.body;
 
     await pool.query(
       `UPDATE customers
        SET expo_id=?, expo_name=?, company_name=?, customer_name=?, designation=?,
-           phone_number=?, enquiry_type=?, email=?, location=?, city=?,
-           industry_type=?, followup_date=?, remarks=?,
-           sms_sent=?, sms_delivered=?, wa_sent=?, wa_delivered=?
+           phone_number=?, mobile_no_2=?, enquiry_type=?, email=?, email_2=?,
+           website=?, location=?, city=?, industry_type=?, followup_date=?, remarks=?,
+           sms_sent=?, wa_sent=?, additional_contacts=?
        WHERE id=?`,
       [
-        expo_id || null, expo_name, company_name, customer_name, designation,
-        phone_number, enquiry_type, email, location, city,
-        industry_type, followup_date || null, remarks,
-        toBit(sms_sent), toBit(sms_delivered), toBit(wa_sent), toBit(wa_delivered),
+        expo_id || null, expo_name || null, company_name, customer_name, designation || null,
+        phone_number, mobile_no_2 || null, enquiry_type || null, email || null, email_2 || null,
+        website || null, location || null, city || null, industry_type || null,
+        followup_date || null, remarks || null,
+        toBit(sms_sent), toBit(wa_sent),
+        additional_contacts ? JSON.stringify(additional_contacts) : null,
         id,
       ]
     );
@@ -125,7 +153,7 @@ const deleteCustomer = async (req, res) => {
   }
 };
 
-// ─── BULK SYNC (offline records) ─────────────────────────────────────────────
+// ─── BULK SYNC (offline records) ──────────────────────────────────────────────
 const syncCustomers = async (req, res) => {
   try {
     const { records } = req.body;
@@ -138,25 +166,58 @@ const syncCustomers = async (req, res) => {
 
     for (const record of records) {
       const {
-        local_id, expo_id, expo_name, company_name, customer_name, designation,
-        phone_number, enquiry_type, email, location, city,
-        industry_type, followup_date, remarks, created_at,
-        sms_sent, sms_delivered, wa_sent, wa_delivered,
+        local_id,
+        expo_id,
+        expo_name,
+        company_name,
+        customer_name,
+        designation,
+        phone_number,
+        mobile_no_2,
+        enquiry_type,
+        email,
+        email_2,
+        website,
+        location,
+        city,
+        industry_type,
+        followup_date,
+        remarks,
+        created_at,
+        sms_sent,
+        wa_sent,
+        additional_contacts,
       } = record;
 
       const [result] = await pool.query(
         `INSERT INTO customers
            (expo_id, expo_name, company_name, customer_name, designation,
-            phone_number, enquiry_type, email, location, city,
-            industry_type, followup_date, remarks, employee_id, created_at,
-            sms_sent, sms_delivered, wa_sent, wa_delivered)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            phone_number, mobile_no_2, enquiry_type, email, email_2, website,
+            location, city, industry_type, followup_date, remarks, employee_id,
+            created_at, sms_sent, wa_sent, additional_contacts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          expo_id || null, expo_name, company_name, customer_name, designation,
-          phone_number, enquiry_type, email, location, city,
-          industry_type, followup_date || null, remarks, employee_id,
+          expo_id || null,
+          expo_name || null,
+          company_name,
+          customer_name,
+          designation || null,
+          phone_number,
+          mobile_no_2 || null,
+          enquiry_type || null,
+          email || null,
+          email_2 || null,
+          website || null,
+          location || null,
+          city || null,
+          industry_type || null,
+          followup_date || null,
+          remarks || null,
+          employee_id,
           created_at || new Date(),
-          toBit(sms_sent), toBit(sms_delivered), toBit(wa_sent), toBit(wa_delivered),
+          toBit(sms_sent),
+          toBit(wa_sent),
+          additional_contacts ? JSON.stringify(additional_contacts) : null,
         ]
       );
       syncedIds.push({ local_id, server_id: result.insertId });
@@ -169,7 +230,7 @@ const syncCustomers = async (req, res) => {
     });
   } catch (error) {
     console.error('Sync error:', error);
-    res.status(500).json({ success: false, message: 'Sync failed' });
+    res.status(500).json({ success: false, message: error.message || 'Sync failed' });
   }
 };
 

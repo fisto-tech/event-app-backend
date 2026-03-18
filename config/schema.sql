@@ -153,3 +153,117 @@ ALTER TABLE customers
 -- Fetch customers due on a date for a given stage
 CREATE INDEX idx_customers_stage_followup
   ON customers (current_stage, followup_date);
+
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- DATABASE SCHEMA UPDATES
+-- ──────────────────────────────────────────────────────────────────────────────
+
+-- ─── 1. SOURCES TABLE (for "Others" entries in expo dropdown) ───────────────────
+CREATE TABLE IF NOT EXISTS sources (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  source_name VARCHAR(255) NOT NULL UNIQUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ─── 2. ADD NEW CUSTOMER FIELDS ────────────────────────────────────────────────
+-- Add mobile_no_2, email_2, and website to customers table (if not already present)
+ALTER TABLE customers
+ADD COLUMN IF NOT EXISTS mobile_no_2 VARCHAR(20),
+ADD COLUMN IF NOT EXISTS email_2 VARCHAR(255),
+ADD COLUMN IF NOT EXISTS website VARCHAR(255);
+
+-- ─── 3. CUSTOMIZABLE TEMPLATES STRUCTURE ──────────────────────────────────────
+-- Modify SMS Templates to be customizable per expo/enquiry_type
+CREATE TABLE IF NOT EXISTS sms_templates_custom (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  template_id INT,
+  expo_id INT,
+  enquiry_type_id INT,
+  title VARCHAR(255) NOT NULL,
+  content TEXT NOT NULL,
+  is_general TINYINT(1) DEFAULT 0 COMMENT '1 = This is a general template available to all',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (template_id) REFERENCES sms_templates(id) ON DELETE CASCADE,
+  FOREIGN KEY (expo_id) REFERENCES expo_master(id) ON DELETE CASCADE,
+  KEY idx_expo_enquiry (expo_id, enquiry_type_id),
+  KEY idx_general (is_general)
+);
+
+-- WhatsApp Templates - customizable per expo/enquiry_type
+CREATE TABLE IF NOT EXISTS whatsapp_templates_custom (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  template_id INT,
+  expo_id INT,
+  enquiry_type_id INT,
+  title VARCHAR(255) NOT NULL,
+  content TEXT NOT NULL,
+  is_general TINYINT(1) DEFAULT 0 COMMENT '1 = This is a general template available to all',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (template_id) REFERENCES whatsapp_templates(id) ON DELETE CASCADE,
+  FOREIGN KEY (expo_id) REFERENCES expo_master(id) ON DELETE CASCADE,
+  KEY idx_expo_enquiry (expo_id, enquiry_type_id),
+  KEY idx_general (is_general)
+);
+
+-- Email Templates - customizable per expo/enquiry_type
+CREATE TABLE IF NOT EXISTS email_templates_custom (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  template_id INT,
+  expo_id INT,
+  enquiry_type_id INT,
+  title VARCHAR(255) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  content TEXT NOT NULL,
+  is_general TINYINT(1) DEFAULT 0 COMMENT '1 = This is a general template available to all',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (template_id) REFERENCES email_templates(id) ON DELETE CASCADE,
+  FOREIGN KEY (expo_id) REFERENCES expo_master(id) ON DELETE CASCADE,
+  KEY idx_expo_enquiry (expo_id, enquiry_type_id),
+  KEY idx_general (is_general)
+);
+
+-- Industry Types - customizable per expo/enquiry_type
+CREATE TABLE IF NOT EXISTS industry_types_custom (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  industry_type_id INT,
+  expo_id INT,
+  enquiry_type_id INT,
+  name VARCHAR(255) NOT NULL,
+  is_general TINYINT(1) DEFAULT 0 COMMENT '1 = This is a general industry type available to all',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (industry_type_id) REFERENCES industry_types(id) ON DELETE CASCADE,
+  FOREIGN KEY (expo_id) REFERENCES expo_master(id) ON DELETE CASCADE,
+  KEY idx_expo_enquiry (expo_id, enquiry_type_id),
+  KEY idx_general (is_general)
+);
+
+-- ─── 4. ALTER ENQUIRY_TYPES TABLE TO ADD ID ──────────────────────────────────
+-- (Ensure enquiry_types has id column for foreign key relationships)
+-- The table already has id from the original schema, this is just for reference
+
+-- ─── 5. SAMPLE DATA FOR SOURCES ───────────────────────────────────────────────
+-- Insert sample sources (these come from "Others" entries by users)
+INSERT INTO sources (source_name) VALUES 
+('LinkedIn Conference'),
+('Trade Show'),
+('Referral'),
+('Cold Call'),
+('Email Campaign')
+ON DUPLICATE KEY UPDATE id=id;
+
+ALTER TABLE expo_master
+  ADD COLUMN is_current TINYINT(1) NOT NULL DEFAULT 0
+    COMMENT '1 = this is the globally selected current expo for all users';
+
+
+ALTER TABLE customers
+  ADD COLUMN additional_contacts JSON DEFAULT NULL
+    COMMENT 'JSON array of {name, designation, phone, phone_2, email} objects';
+
+ 
+ALTER TABLE expo_master
+ADD COLUMN conduct_dates JSON DEFAULT NULL
+  COMMENT 'JSON array of date strings ["YYYY-MM-DD", ...] for dates this expo is conducted',
+ADD COLUMN remarks TEXT DEFAULT NULL
+  COMMENT 'Optional notes/remarks about the expo';
