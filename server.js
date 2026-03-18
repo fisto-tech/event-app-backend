@@ -39,11 +39,11 @@ app.get('/api/health', (req, res) => {
 const VAPID_PUBLIC_KEY = process.env.NOTIFICATION_PUBLIC_KEY;
 const VAPID_PRIVATE_KEY = process.env.NOTIFICATION_PRIVATE_KEY;
 
-webpush.setVapidDetails(
-  "mailto:test@test.com",
-  VAPID_PUBLIC_KEY,
-  VAPID_PRIVATE_KEY
-);
+// webpush.setVapidDetails(
+//   "mailto:test@test.com",
+//   VAPID_PUBLIC_KEY,
+//   VAPID_PRIVATE_KEY
+// );
 
 // temporary memory storage
 let subscription = null;
