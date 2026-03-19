@@ -64,10 +64,15 @@ const updateExpo = async (req, res) => {
   try {
     const { id } = req.params;
     const { expo_name, status, conduct_dates, remarks } = req.body;
-    await pool.query(
-      'UPDATE expo_master SET expo_name = ?, status = ?, conduct_dates = ?, remarks = ? WHERE id = ?',
-      [expo_name, status, JSON.stringify(conduct_dates || []), remarks || null, id]
-    );
+    let query = 'UPDATE expo_master SET expo_name = ?';
+    const params = [expo_name];
+    if (status !== undefined) {
+      query += ', status = ?';
+      params.push(status);
+    }
+    query += ', conduct_dates = ?, remarks = ? WHERE id = ?';
+    params.push(JSON.stringify(conduct_dates || []), remarks || null, id);
+    await pool.query(query, params);
     res.json({ success: true, message: 'Updated successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -353,6 +358,22 @@ const deleteCustomSmsTemplate = async (req, res) => {
   }
 };
 
+const updateCustomSmsTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content, expo_id, enquiry_type_id, industry_type_id } = req.body;
+    if (!title || !content) return res.status(400).json({ success: false, message: 'Title and content are required' });
+    await pool.query(
+      'UPDATE sms_templates_custom SET title = ?, content = ?, expo_id = ?, enquiry_type_id = ?, industry_type_id = ? WHERE id = ?',
+      [title, content, expo_id || null, enquiry_type_id || null, industry_type_id || null, id]
+    );
+    res.json({ success: true, message: 'Updated successfully' });
+  } catch (error) {
+    console.error('Update custom SMS template error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
 // ─── WHATSAPP TEMPLATES (Base & Customizable) ──────────────────────────────────
 
 const getWhatsappTemplates = async (req, res) => {
@@ -485,6 +506,22 @@ const deleteCustomWhatsappTemplate = async (req, res) => {
   }
 };
 
+const updateCustomWhatsappTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content, expo_id, enquiry_type_id, industry_type_id } = req.body;
+    if (!title || !content) return res.status(400).json({ success: false, message: 'Title and content are required' });
+    await pool.query(
+      'UPDATE whatsapp_templates_custom SET title = ?, content = ?, expo_id = ?, enquiry_type_id = ?, industry_type_id = ? WHERE id = ?',
+      [title, content, expo_id || null, enquiry_type_id || null, industry_type_id || null, id]
+    );
+    res.json({ success: true, message: 'Updated successfully' });
+  } catch (error) {
+    console.error('Update custom WhatsApp template error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
 // ─── EMAIL TEMPLATES (Base & Customizable) ─────────────────────────────────────
 
 const getEmailTemplates = async (req, res) => {
@@ -564,9 +601,9 @@ module.exports = {
   // Industry Types — industry_types_custom only
   getIndustryTypes, createIndustryType, updateIndustryType, deleteIndustryType,
   // SMS Templates
-  getSmsTemplates, createSmsTemplate, updateSmsTemplate, deleteSmsTemplate, getSmsTemplatesForContext, createCustomSmsTemplate, deleteCustomSmsTemplate,
+  getSmsTemplates, createSmsTemplate, updateSmsTemplate, deleteSmsTemplate, getSmsTemplatesForContext, createCustomSmsTemplate, deleteCustomSmsTemplate, updateCustomSmsTemplate,
   // WhatsApp Templates
-  getWhatsappTemplates, createWhatsappTemplate, updateWhatsappTemplate, deleteWhatsappTemplate, getWhatsappTemplatesForContext, createCustomWhatsappTemplate, deleteCustomWhatsappTemplate,
+  getWhatsappTemplates, createWhatsappTemplate, updateWhatsappTemplate, deleteWhatsappTemplate, getWhatsappTemplatesForContext, createCustomWhatsappTemplate, deleteCustomWhatsappTemplate, updateCustomWhatsappTemplate,
   // Email Templates
   getEmailTemplates, createEmailTemplate, deleteEmailTemplate, getEmailTemplatesForContext, createCustomEmailTemplate,
 };

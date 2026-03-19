@@ -6,8 +6,8 @@ const {
   getExpos, createExpo, updateExpo, deleteExpo, getCurrentExpo, setCurrentExpo,
   getEnquiryTypes, createEnquiryType, updateEnquiryType, deleteEnquiryType,
   getIndustryTypes, createIndustryType, updateIndustryType, deleteIndustryType,
-  getSmsTemplates, createSmsTemplate, updateSmsTemplate, deleteSmsTemplate, getSmsTemplatesForContext, createCustomSmsTemplate, deleteCustomSmsTemplate,
-  getWhatsappTemplates, createWhatsappTemplate, updateWhatsappTemplate, deleteWhatsappTemplate, getWhatsappTemplatesForContext, createCustomWhatsappTemplate, deleteCustomWhatsappTemplate,
+  getSmsTemplates, createSmsTemplate, updateSmsTemplate, deleteSmsTemplate, getSmsTemplatesForContext, createCustomSmsTemplate, deleteCustomSmsTemplate, updateCustomSmsTemplate,
+  getWhatsappTemplates, createWhatsappTemplate, updateWhatsappTemplate, deleteWhatsappTemplate, getWhatsappTemplatesForContext, createCustomWhatsappTemplate, deleteCustomWhatsappTemplate, updateCustomWhatsappTemplate,
   getEmailTemplates, createEmailTemplate, deleteEmailTemplate, getEmailTemplatesForContext, createCustomEmailTemplate,
 } = require('../controllers/masterController');
 
@@ -42,6 +42,7 @@ router.get('/sms-templates', authenticateToken, getSmsTemplates);
 router.post('/sms-templates', authenticateToken, isAdmin, createSmsTemplate);
 router.get('/sms-templates/context', authenticateToken, getSmsTemplatesForContext);
 router.post('/sms-templates/custom', authenticateToken, isAdmin, createCustomSmsTemplate);
+router.put('/sms-templates/custom/:id', authenticateToken, isAdmin, updateCustomSmsTemplate);
 router.delete('/sms-templates/custom/:id', authenticateToken, isAdmin, deleteCustomSmsTemplate);
 router.put('/sms-templates/:id', authenticateToken, isAdmin, updateSmsTemplate);
 router.delete('/sms-templates/:id', authenticateToken, isAdmin, deleteSmsTemplate);
@@ -51,6 +52,7 @@ router.get('/whatsapp-templates', authenticateToken, getWhatsappTemplates);
 router.post('/whatsapp-templates', authenticateToken, isAdmin, createWhatsappTemplate);
 router.get('/whatsapp-templates/context', authenticateToken, getWhatsappTemplatesForContext);
 router.post('/whatsapp-templates/custom', authenticateToken, isAdmin, createCustomWhatsappTemplate);
+router.put('/whatsapp-templates/custom/:id', authenticateToken, isAdmin, updateCustomWhatsappTemplate);
 router.delete('/whatsapp-templates/custom/:id', authenticateToken, isAdmin, deleteCustomWhatsappTemplate);
 router.put('/whatsapp-templates/:id', authenticateToken, isAdmin, updateWhatsappTemplate);
 router.delete('/whatsapp-templates/:id', authenticateToken, isAdmin, deleteWhatsappTemplate);
